@@ -42,7 +42,7 @@ defmodule Xtree.Algorithms do
 
         id_map = Map.put(id_map, n_id, node)
 
-        # Put into the OpMap `node` as key and `{operation, ptrNode}` as value
+        # Put into the OpMap `node.n_id` as key and `{operation, ptrNode}` as value
         op_map = Map.put(op_map, n_id, nil)
 
         {:ok, {tMD_map, id_map, op_map}}

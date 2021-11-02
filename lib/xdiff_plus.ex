@@ -9,119 +9,202 @@ defmodule XdiffPlus do
   alias Xtree
   alias Xtree.Algorithms
 
+  def assign_node(%{n_id: n_id, tMD: tMD} = node, {tMD_map, id_map, op_map}) do
+    # Build the tMD map
+    # Each node tMD hash (`node.tMD`) is the key
+    # Value is the number of times the tMD hash appears in the tree
+    tMD_map = Map.update(tMD_map, tMD, 1, &(&1 + 1))
+    # case Map.get(tMD_map, tMD, nil) do
+    #   nil -> Map.put(tMD_map, tMD, 1)
+    #   value -> Map.put(tMD_map, tMD, value + 1)
+    # end
+
+    # Build the ID map, where each node id (`node.n_id`)
+    # is the key, and the value is the `node` object
+    id_map = Map.put(id_map, n_id, node)
+
+    # Build the operations map for the tree
+    # where is node id is the key and the value is the operation
+    # tuple {operation_name, reference node id}
+    # default set to `nil`
+    op_map = Map.put(op_map, n_id, nil)
+
+    {tMD_map, id_map, op_map}
+  end
+
+  def build_old_tree_maps(tree) do
+    {:ok, acc} =
+      Algorithms.dft_traverse(
+        tree,
+        {%{}, %{}, %{}, %{}},
+        fn %{tMD: tMD} = node, {tMD_map, id_map, op_map, o_htable} ->
+          {tMD_map, id_map, op_map} = assign_node(node, {tMD_map, id_map, op_map})
+
+          # Store only non-unique nodes in o_htable
+          o_htable =
+            if Map.get(tMD_map, tMD, 1) > 1 do
+              Map.update(o_htable, tMD, [node], fn nodes -> [node | nodes] end)
+            else
+              o_htable
+            end
+
+          {tMD_map, id_map, op_map, o_htable}
+        end
+      )
+
+    acc
+  end
+
+  def build_new_tree_maps(tree) do
+    {:ok, acc} =
+      Algorithms.dft_traverse(
+        tree,
+        {%{}, %{}, %{}, %{}, %{}},
+        fn %{tMD: tMD, iMD: iMD, id_attr?: id_attr?} = node,
+           {tMD_map, id_map, op_map, n_htable, n_idtable} ->
+          {tMD_map, id_map, op_map} = assign_node(node, {tMD_map, id_map, op_map})
+
+          # Store only unique nodes in n_htable
+          # Because we don't want to iterate over the nodes again
+          # at the end of the traversal, we store each node in the table
+          # when its tMD count is 1 and as the count increases
+          # we delete it from the n_htable
+          n_htable =
+            if Map.get(tMD_map, tMD) == 1 do
+              Map.put(n_htable, tMD, node)
+            else
+              Map.delete(n_htable, tMD)
+            end
+
+          # Store all nodes with unique iMDs (if they have the ID attribute set)
+          n_idtable =
+            if id_attr? do
+              Map.put(n_idtable, iMD, node)
+            else
+              n_idtable
+            end
+
+          {tMD_map, id_map, op_map, n_htable, n_idtable}
+        end
+      )
+
+    acc
+  end
+
   def diff(%Xtree{} = new_tree, %Xtree{} = old_tree) do
     # build the tree message digest map for the old XTree
-    {o_tMD_map, o_id_map, o_op_map} = Algorithms.build_tree_maps(old_tree)
+    {_o_tMD_map, o_id_map, o_op_map, o_htable} = build_old_tree_maps(old_tree)
     # build the tree message digest map for the new XTree
-    {n_tMD_map, n_id_map, n_op_map} = Algorithms.build_tree_maps(new_tree)
+    {_n_tMD_map, n_id_map, n_op_map, n_htable, n_idtable} = build_new_tree_maps(new_tree)
 
     # Tuple to hold id maps for nodes
     id_maps = {o_id_map, n_id_map}
     # Tuple to hold operation maps for nodes
     op_maps = {n_op_map, o_op_map}
 
-    # build a map of non-unique tMDs of the old XTree (O_HTable)
-    o_htable =
-      Enum.reduce(o_tMD_map, %{}, fn
-        {_tMD, 1}, acc -> acc
-        {tMD, _}, acc -> Map.put(acc, tMD, 1)
-      end)
-
-    # build maps of unique nodes (N_Htable) and non-unique node IDs (iMD),
-    # out of the new X Tree
-    {:ok, {n_htable, n_idtable}} =
-      Algorithms.dft_traverse(
-        new_tree,
-        {%{}, %{}},
-        fn %{iMD: iMD, id_attr?: id_attr?, tMD: tMD} = node, {n_htable, n_idtable} ->
-          n_htable =
-            if Map.get(n_tMD_map, tMD) == 1 do
-              Map.put(n_htable, tMD, node)
-            else
-              n_htable
-            end
-
-          n_idtable =
-            if iMD != nil and id_attr? == true do
-              Map.put(n_idtable, iMD, node)
-            else
-              n_idtable
-            end
-
-          {:ok, {n_htable, n_idtable}}
-        end
-      )
-
-    # try to match nodes with a same iMD values
-    {:ok, {m_list, op_maps}} =
+    # Step 1: Match identical subtrees with 1-to-1 correspondence
+    # and match nodes with ID attributes
+    {:ok, {op_maps, m_list}} =
       Algorithms.bft_traverse(
         old_tree,
-        {%{}, op_maps},
-        fn %{
-             index: o_index,
-             tMD: old_tMD
-           } = old_node,
-           {m_list, op_maps} = acc ->
-          # any entry of O_HTable does NOT have the same tMD value that the node new_node has
-
-          if Map.has_key?(o_htable, old_tMD) == false do
-            # old_node is unique in tree
-
-            # some entry of N_Htable has the same tMD value that the node new_node has
-            case Map.get(n_htable, old_tMD) do
+        {op_maps, %{}},
+        fn %{tMD: tMD} = o_node, {op_maps, m_list} = acc ->
+          # Where [node N] is the root of a subtree in old tree
+          # If any entry of O_Htable does NOT have
+          # the same tMD value that the (old) [node] N has
+          # o_htable stores only non-unique nodes by tMD
+          # so if a tMD is not present in the o_htable
+          # it means that the old node is unique in the old tree
+          if Map.has_key?(o_htable, tMD) == false do
+            # n_htable stores unique tMD nodes in the new tree
+            # check to see if the old unique node has a unique tMD match
+            # in the new tree
+            case Map.get(n_htable, tMD) do
               nil ->
-                # Go on to next node in τ
+                # old unique subtree is not in the new tree
+                # Continue visiting other nodes in old tree
                 {:ok, acc}
 
-              %{index: n_index} = new_node ->
-                # subtree node will set Op in step 3
-                op =
-                  if n_index == o_index do
-                    :nop
-                  else
-                    :mov
-                  end
+              %{} = n_node ->
+                # there is a unique node in the new tree that has the same tMD
+                # as the unique node in the old tree
 
-                # Match the nodes N and M using NOP
-                op_maps = match_nodes(op_maps, old_node, new_node, op)
+                # match the nodes with NOP
+                op_maps = match_nodes(op_maps, o_node, n_node, :nop)
 
-                # Add the pair (N, M) of nodes to M_List
-                # Stop visiting all the subtrees of the node N,
-                # then go on to next node in τ
-                {:skip, {Map.put(m_list, old_node, new_node), op_maps}}
+                # Add the pair to m_list
+                m_list = Map.put(m_list, o_node, n_node)
+
+                # Stop visiting all subtrees of old node N
+                # Continue visiting other nodes in old tree
+                {:skip, {op_maps, m_list}}
             end
           else
-            # Go on to next node in τ
+            # Continue visiting other nodes in old tree
             {:ok, acc}
           end
         end
       )
 
-    # matches node with the same iMD
-    {:ok, op_maps} =
-      Algorithms.bft_traverse(
-        old_tree,
-        op_maps,
-        fn %{iMD: iMD, index: o_index, id_attr?: id_attr?} = old_node, op_maps ->
-          # unmatch node after previous sub-step
-          if false == Map.has_key?(m_list, old_node) && id_attr? == true do
-            case Map.get(n_idtable, iMD, nil) do
-              nil ->
-                op_maps
+    # After completing the previous sub-step, traverse old tree
+    # in breadth-first order, and for each unmatched node
+    # if it has an ID attribute, lookup the N_IDHTable for
+    # new nodes that have the same iMD value.
+    # If lookup succeeds, match the old node with the new node as NOP.
+    #
+    # L.E. to optimize traversal, we can use the old op_map to
+    # identify and check only unmatched nodes, instead of traversing
+    # the entire tree.
 
-              %{index: n_index} = new_node ->
-                op = if o_index == n_index, do: :nop, else: :mov
+    # NOTE: This does ALSO matches nodes that have the same iMD (label+ID attr)
+    # and that have their attributes changed, or different contents
+    # TODO: check for differences and set operation to UPD or change? if the case
+    op_maps =
+      elem(op_maps, 1)
+      |> Enum.reduce(op_maps, fn
+        {o_n_id, nil}, op_maps ->
+          # node n_id has no operation set
+          # Get node and check for ID attribute
+          case Map.get(o_id_map, o_n_id) do
+            %{iMD: iMD, nMD: nMD, index: index, id_attr?: true} = o_node ->
+              # Note: if multiple elements have the same ID
+              # then this will match with the last traversed node that has the same iMD
+              # Possible workaround would be to support multiple nodes per iMD
+              # in the N_IDHtable
+              case Map.get(n_idtable, iMD) do
+                nil ->
+                  op_maps
 
-                match_nodes(op_maps, old_node, new_node, op)
-            end
-          else
-            op_maps
+                %{index: ^index, nMD: ^nMD} = n_node ->
+                  # Node has the same iMD, the same index and no change in attributes (nMD)
+                  match_nodes(op_maps, o_node, n_node, :nop)
+
+                %{index: ^index} = n_node ->
+                  # Node has the same iMD, the same index, but has attributes (nMD) changed
+                  match_nodes(op_maps, o_node, n_node, :upd)
+
+                %{} = n_node ->
+                  # Node has the same iMD but different index
+                  match_nodes(op_maps, o_node, n_node, :mov)
+              end
+
+            _ ->
+              op_maps
           end
-        end
-      )
+
+        _, op_maps ->
+          op_maps
+      end)
 
     # Step 2: Propagate matches upward to parent nodes
     op_maps = match_upwards(op_maps, m_list, id_maps)
+
+    {a, b} = op_maps
+
+    Enum.map([a, b], fn m ->
+      Enum.reject(m, &(elem(&1, 1) == nil))
+      |> Enum.sort(fn {ida, _}, {idb, _} -> ida < idb end)
+    end)
 
     # Step 3: Match remaining nodes downwards
     {:ok, op_maps} =
@@ -130,6 +213,11 @@ defmodule XdiffPlus do
         op_maps,
         &dft_match_remaining_nodes_downwards(&1, &2, id_maps)
       )
+
+    Enum.map([a, b], fn m ->
+      Enum.reject(m, &(elem(&1, 1) == nil))
+      |> Enum.sort(fn {ida, _}, {idb, _} -> ida < idb end)
+    end)
 
     # Step 4: Tune existing matches
     op_maps = tune_matches(old_tree, op_maps, id_maps)
@@ -229,7 +317,6 @@ defmodule XdiffPlus do
     op_maps
     |> set_defaults({new_tree, old_tree})
     |> dump({new_tree, old_tree})
-    |> IO.inspect(label: "FINISHED OP MAPS")
   end
 
   def diff(_, _) do
@@ -444,7 +531,14 @@ defmodule XdiffPlus do
     n_parent = Map.get(n_id_map, n_parent_id)
 
     if equal_label?(o_parent, n_parent) do
-      op_maps = match_nodes(op_maps, o_parent, n_parent, :nop)
+      op_maps =
+        if o_parent.nMD == n_parent.nMD do
+          # Parent nodes have diverged in attribute values
+          match_nodes(op_maps, o_parent, n_parent, :nop)
+        else
+          match_nodes(op_maps, o_parent, n_parent, :upd)
+        end
+
       propagate_parents_match_upwards(o_parent_ids, n_parent_ids, id_maps, op_maps)
     else
       op_maps
