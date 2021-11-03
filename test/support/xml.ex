@@ -1,5 +1,5 @@
 defmodule XdiffPlus.Support.XML do
-  alias XdiffPlus.Support.XML.{Element, TextNode}
+  alias XdiffPlus.Support.XML.{Element, Protocol, TextNode}
 
   @char_space 0x20
   @char_lf 0x0A
@@ -32,6 +32,14 @@ defmodule XdiffPlus.Support.XML do
     unless whitespace?(str) do
       %TextNode{value: str}
     end
+  end
+
+  def encode!(nil) do
+    ""
+  end
+
+  def encode!(node) do
+    Protocol.encode!(node)
   end
 
   defp whitespace?(<<>>) do

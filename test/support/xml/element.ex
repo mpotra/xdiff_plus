@@ -44,4 +44,15 @@ defmodule XdiffPlus.Support.XML.Element do
       end)
     end
   end
+
+  defimpl XdiffPlus.Support.XML.Protocol do
+    def encode!(%{name: name, attrs: attrs, children: []}) do
+      Saxy.encode!({name, attrs, []})
+    end
+
+    def encode!(%{name: name, attrs: attrs, children: children}) do
+      children = Enum.map(children, &XdiffPlus.Support.XML.Protocol.encode!(&1))
+      Saxy.encode!({name, attrs, children})
+    end
+  end
 end

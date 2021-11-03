@@ -220,12 +220,4 @@ defmodule Xtree.AlgorithmsTest do
              0
            ]
   end
-
-  # def simple_form(%{type: :element, n_id: n_id, label: label, children: children}) do
-  #   {label, n_id, Enum.map(children, &simple_form/1)}
-  # end
-
-  # def simple_form(%{type: :text, n_id: n_id, value: value}) do
-  #   {:text, n_id, value}
-  # end
 end
