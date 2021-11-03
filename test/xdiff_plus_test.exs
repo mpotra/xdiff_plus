@@ -8,7 +8,7 @@ defmodule XdiffPlusTest do
 
   setup do
     old_xml_str = """
-    <menu>
+    <menu name="some_menu">
       <item onclick="edit">Open</item>
       <hr/>
       <item onclick="toggle:1">Item 1</item>
@@ -34,7 +34,7 @@ defmodule XdiffPlusTest do
     """
 
     new_xml_str = """
-    <menu>
+    <menu name="some_menu">
       <item onclick="edit">Open</item>
       <hr/>
       <item onclick="toggle:1">Item 1</item>
@@ -82,7 +82,7 @@ defmodule XdiffPlusTest do
     assert old_op_map == %{}
     assert new_op_map != %{}
     assert new_count == Enum.count(Map.keys(new_op_map))
-    assert Enum.all?(new_op_map, fn {_node, op} -> op == :ins end)
+    assert Enum.all?(new_op_map, fn {_node, op} -> elem(op, 0) == :ins end)
   end
 
   test "diff with empty new tree", %{old: old_tree, old_count: old_count} do
@@ -108,17 +108,15 @@ defmodule XdiffPlusTest do
       |> to_list()
       |> group_ops()
 
-    assert Map.get(new_ops, :ins) == [{"<a href=\"x\"/>", ""}]
+    assert Map.get(new_ops, :ins) == [{"<a href=\"x\"/>", "<menu name=\"some_menu\"/>", "<hr/>"}]
     assert Map.get(new_ops, :del) == nil
 
     assert Map.get(new_ops, :upd) == [
-             {"<item id=\"89\" onclick=\"view:default\">Show Default Layout (x)</item>",
-              "<item id=\"8\" onclick=\"view:default\">Show Default Layout</item>"},
-             {"<item onclick=\"browser3\">Open Browser</item>",
-              "<item onclick=\"browser\">Open Browser</item>"},
-             {"<item onclick=\"quits\">Quit2</item>", "<item onclick=\"quit\">Quit</item>"},
-             {"<item onclick=\"toggle:5\">Item 4</item>",
-              "<item onclick=\"toggle:4\">Item 4</item>"},
+             {"<item id=\"89\" onclick=\"view:default\"/>",
+              "<item id=\"8\" onclick=\"view:default\"/>"},
+             {"<item onclick=\"browser3\"/>", "<item onclick=\"browser\"/>"},
+             {"<item onclick=\"quits\"/>", "<item onclick=\"quit\"/>"},
+             {"<item onclick=\"toggle:5\"/>", "<item onclick=\"toggle:4\"/>"},
              {"Quit2", "Quit"},
              {"Show Default Layout (x)", "Show Default Layout"}
            ]
@@ -132,13 +130,11 @@ defmodule XdiffPlusTest do
     assert Map.get(old_ops, :del) == [{"<hr/>", ""}]
 
     assert Map.get(old_ops, :upd) == [
-             {"<item id=\"8\" onclick=\"view:default\">Show Default Layout</item>",
-              "<item id=\"89\" onclick=\"view:default\">Show Default Layout (x)</item>"},
-             {"<item onclick=\"browser\">Open Browser</item>",
-              "<item onclick=\"browser3\">Open Browser</item>"},
-             {"<item onclick=\"quit\">Quit</item>", "<item onclick=\"quits\">Quit2</item>"},
-             {"<item onclick=\"toggle:4\">Item 4</item>",
-              "<item onclick=\"toggle:5\">Item 4</item>"},
+             {"<item id=\"8\" onclick=\"view:default\"/>",
+              "<item id=\"89\" onclick=\"view:default\"/>"},
+             {"<item onclick=\"browser\"/>", "<item onclick=\"browser3\"/>"},
+             {"<item onclick=\"quit\"/>", "<item onclick=\"quits\"/>"},
+             {"<item onclick=\"toggle:4\"/>", "<item onclick=\"toggle:5\"/>"},
              {"Quit", "Quit2"},
              {"Show Default Layout", "Show Default Layout (x)"}
            ]
@@ -146,11 +142,14 @@ defmodule XdiffPlusTest do
 
   defp to_list(op_map) do
     Enum.reduce(op_map, [], fn
-      {%{ref: xml_node}, {op, %{ref: match_xml_node}}}, acc ->
-        [{op, XML.encode!(xml_node), XML.encode!(match_xml_node)} | acc]
+      {node, {:ins, parent_node, prev_node}}, acc ->
+        [{:ins, encode!(node), encode!(parent_node), encode!(prev_node)} | acc]
 
-      {%{ref: xml_node}, op}, acc when is_atom(op) ->
-        [{op, XML.encode!(xml_node), ""} | acc]
+      {node, {op, match_node}}, acc ->
+        [{op, encode!(node), encode!(match_node)} | acc]
+
+      {node, op}, acc when is_atom(op) ->
+        [{op, encode!(node), ""} | acc]
 
       _, acc ->
         acc
@@ -159,8 +158,12 @@ defmodule XdiffPlusTest do
 
   defp group_ops(op_list) do
     op_list
-    |> Enum.reduce(%{}, fn {op, a, b}, acc ->
-      Map.update(acc, op, [{a, b}], fn refs -> [{a, b} | refs] end)
+    |> Enum.reduce(%{}, fn
+      {op, a, b}, acc ->
+        Map.update(acc, op, [{a, b}], &[{a, b} | &1])
+
+      {:ins, node, parent, prev}, acc ->
+        Map.update(acc, :ins, [{node, parent, prev}], &[{node, parent, prev} | &1])
     end)
     |> Enum.reduce(%{}, fn {key, pairs}, acc ->
       sorted_pairs = Enum.sort(pairs, &sort_pair/2)
@@ -175,6 +178,14 @@ defmodule XdiffPlusTest do
 
   defp sort_pair({a1, _}, {b1, _}) do
     a1 < b1
+  end
+
+  defp encode!(%Xtree{ref: xml_node}) do
+    XML.encode!(xml_node, skip_children: true)
+  end
+
+  defp encode!(nil) do
+    nil
   end
 
   # defp simple_form(%{tMD: tMD, type: :element, n_id: n_id, label: label, children: children}) do

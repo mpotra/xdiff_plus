@@ -28,7 +28,7 @@ defmodule XdiffPlus.Support.XML.TextNode do
   end
 
   defimpl XdiffPlus.Support.XML.Protocol do
-    def encode!(%{value: value}) do
+    def encode!(%{value: value}, _) do
       value
     end
   end

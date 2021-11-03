@@ -353,6 +353,33 @@ defmodule XdiffPlus do
     Map.put(acc, node, {op, other_node})
   end
 
+  defp unfold_op_map_item({node_id, :ins}, {id_map, _}, acc) do
+    # Handle inserts, and set reference node to the previous node in the same tree
+    node = Map.get(id_map, node_id)
+
+    op =
+      case node do
+        %{parent_ids: []} ->
+          {:ins, nil, nil}
+
+        %{parent_ids: [parent_id | _]} ->
+          parent = Map.get(id_map, parent_id)
+
+          prev_sibling =
+            if node_id == parent_id + 1 do
+              # Node is first child of parent
+              # No previous sibling
+              nil
+            else
+              Map.get(id_map, node_id - 1)
+            end
+
+          {:ins, parent, prev_sibling}
+      end
+
+    Map.put(acc, node, op)
+  end
+
   defp unfold_op_map_item({node_id, op}, {id_map, _}, acc) when is_atom(op) do
     node = Map.get(id_map, node_id)
     Map.put(acc, node, op)

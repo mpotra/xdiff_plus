@@ -34,12 +34,14 @@ defmodule XdiffPlus.Support.XML do
     end
   end
 
-  def encode!(nil) do
+  def encode!(node, opts \\ [])
+
+  def encode!(nil, _) do
     ""
   end
 
-  def encode!(node) do
-    Protocol.encode!(node)
+  def encode!(node, opts) do
+    Protocol.encode!(node, opts)
   end
 
   defp whitespace?(<<>>) do
