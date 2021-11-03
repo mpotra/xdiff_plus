@@ -98,7 +98,7 @@ defmodule XdiffPlus do
     {_n_tMD_map, n_id_map, n_op_map, n_htable, n_idtable} = build_new_tree_maps(new_tree)
 
     # Tuple to hold id maps for nodes
-    id_maps = {o_id_map, n_id_map}
+    id_maps = {n_id_map, o_id_map}
     # Tuple to hold operation maps for nodes
     op_maps = {n_op_map, o_op_map}
 
@@ -199,13 +199,6 @@ defmodule XdiffPlus do
     # Step 2: Propagate matches upward to parent nodes
     op_maps = match_upwards(op_maps, m_list, id_maps)
 
-    {a, b} = op_maps
-
-    Enum.map([a, b], fn m ->
-      Enum.reject(m, &(elem(&1, 1) == nil))
-      |> Enum.sort(fn {ida, _}, {idb, _} -> ida < idb end)
-    end)
-
     # Step 3: Match remaining nodes downwards
     {:ok, op_maps} =
       Algorithms.dft_traverse(
@@ -213,11 +206,6 @@ defmodule XdiffPlus do
         op_maps,
         &dft_match_remaining_nodes_downwards(&1, &2, id_maps)
       )
-
-    Enum.map([a, b], fn m ->
-      Enum.reject(m, &(elem(&1, 1) == nil))
-      |> Enum.sort(fn {ida, _}, {idb, _} -> ida < idb end)
-    end)
 
     # Step 4: Tune existing matches
     op_maps = tune_matches(old_tree, op_maps, id_maps)
@@ -262,87 +250,118 @@ defmodule XdiffPlus do
     s_p_htable =
       s_htable
       |> Enum.reduce([], &Enum.concat(elem(&1, 1), &2))
-      |> Enum.reduce(%{}, fn %{n_id: o_node_id, parent_ids: [parent_id | _]} = o_node,
-                             s_p_htable ->
-        if Map.get(o_op_map, o_node_id) == nil do
-          entries = Map.get(s_p_htable, parent_id, [])
-          Map.put(s_p_htable, parent_id, [o_node | entries])
-        else
-          s_p_htable
-        end
+      |> Enum.reduce(%{}, fn
+        %{n_id: o_node_id, parent_ids: [parent_id | _]} = o_node, s_p_htable ->
+          if Map.get(o_op_map, o_node_id) == nil do
+            entries = Map.get(s_p_htable, parent_id, [])
+            Map.put(s_p_htable, parent_id, [o_node | entries])
+          else
+            s_p_htable
+          end
+
+        _, acc ->
+          acc
       end)
 
     op_maps =
       t_htable
       |> Enum.reduce([], &Enum.concat(elem(&1, 1), &2))
-      |> Enum.reduce(op_maps, fn %{
-                                   n_id: n_node_id,
-                                   index: n_index,
-                                   label: n_label,
-                                   parent_ids: [n_parent_id | _]
-                                 } = n_node,
-                                 {n_op_map, _o_op_map} = op_maps ->
-        if Map.get(n_op_map, n_node_id) == nil do
-          case Map.get(n_op_map, n_parent_id) do
-            {_, expect_p_node_id} ->
-              case Map.get(s_p_htable, expect_p_node_id, nil) do
-                [_ | _] = old_children ->
-                  Enum.reduce(
-                    old_children,
-                    op_maps,
-                    fn
-                      %{index: ^n_index} = o_node, op_maps ->
-                        match_nodes(op_maps, o_node, n_node, :upd)
+      |> Enum.reduce(op_maps, fn
+        %{
+          n_id: n_node_id,
+          index: n_index,
+          label: n_label,
+          parent_ids: [n_parent_id | _]
+        } = n_node,
+        {n_op_map, _o_op_map} = op_maps ->
+          if Map.get(n_op_map, n_node_id) == nil do
+            case Map.get(n_op_map, n_parent_id) do
+              {_, expect_p_node_id} ->
+                case Map.get(s_p_htable, expect_p_node_id, nil) do
+                  [_ | _] = old_children ->
+                    Enum.reduce(
+                      old_children,
+                      op_maps,
+                      fn
+                        %{index: ^n_index} = o_node, op_maps ->
+                          match_nodes(op_maps, o_node, n_node, :upd)
 
-                      %{label: ^n_label} = o_node, op_maps ->
-                        match_nodes(op_maps, o_node, n_node, :mov)
+                        %{label: ^n_label} = o_node, op_maps ->
+                          match_nodes(op_maps, o_node, n_node, :mov)
 
-                      _, op_maps ->
-                        op_maps
-                    end
-                  )
+                        _, op_maps ->
+                          op_maps
+                      end
+                    )
 
-                _ ->
-                  op_maps
-              end
+                  _ ->
+                    op_maps
+                end
 
-            _ ->
-              op_maps
+              _ ->
+                op_maps
+            end
+          else
+            op_maps
           end
-        else
-          op_maps
-        end
+
+        _, acc ->
+          acc
       end)
 
-    op_maps
-    |> set_defaults({new_tree, old_tree})
-    |> dump({new_tree, old_tree})
+    u_op_maps =
+      op_maps
+      |> set_defaults()
+      |> unfold_op_maps(id_maps)
+
+    [u_op_maps, {new_tree, old_tree}]
   end
 
-  def diff(_, _) do
-    # TODO
+  def diff(nil, %Xtree{} = old_tree) do
+    [{_, op_map}, {_, tree}] = diff(Xtree.build_empty(), old_tree)
+    [{%{}, op_map}, {nil, tree}]
   end
 
-  defp dump({n_op_map, o_op_map}, {new_tree, old_tree}) do
-    [dump(new_tree, n_op_map), dump(old_tree, o_op_map)]
+  def diff(%Xtree{} = new_tree, nil) do
+    [{op_map, _}, {tree, _}] = diff(new_tree, Xtree.build_empty())
+    [{op_map, %{}}, {tree, nil}]
   end
 
-  defp dump(%{} = tree, %{} = op_map) do
-    # {:ok, tree} = Algorithms.walk(tree, fn %{n_id: id, ref: ref} ->
-    #   op = Map.get(op_map, id)
-    #   {op, ref}
-    #   case Map.get(op_map, id) do
-    #     {:nop, _id} -> {:nop, ref}
-    #     :ins ->
-    #   end
-    # end)
+  def diff(nil, nil) do
+    [{%{}, %{}}, {nil, nil}]
+  end
+
+  def diff(new_tree, old_tree) do
+    diff(Xtree.build(new_tree), Xtree.build(old_tree))
+  end
+
+  defp unfold_op_maps({n_op_map, o_op_map}, {n_id_map, o_id_map}) do
+    {
+      unfold_op_map(n_op_map, {n_id_map, o_id_map}),
+      unfold_op_map(o_op_map, {o_id_map, n_id_map})
+    }
+  end
+
+  defp unfold_op_map(%{} = op_map, {id_map, other_id_map}) do
     op_map
+    |> Enum.reduce(%{}, &unfold_op_map_item(&1, {id_map, other_id_map}, &2))
+  end
+
+  defp unfold_op_map_item({node_id, {op, other_node_id}}, {id_map, other_id_map}, acc) do
+    node = Map.get(id_map, node_id)
+    other_node = Map.get(other_id_map, other_node_id)
+    Map.put(acc, node, {op, other_node})
+  end
+
+  defp unfold_op_map_item({node_id, op}, {id_map, _}, acc) when is_atom(op) do
+    node = Map.get(id_map, node_id)
+    Map.put(acc, node, op)
   end
 
   defp dft_match_remaining_nodes_downwards(
          %{n_id: o_node_id} = o_node,
          {_, o_op_map} = op_maps,
-         {_, n_id_map} = _id_maps
+         {n_id_map, _} = _id_maps
        ) do
     case Map.get(o_op_map, o_node_id) do
       {_op, n_node_id} ->
@@ -483,7 +502,7 @@ defmodule XdiffPlus do
   defp tune_match(
          %{n_id: node_id} = node,
          {n_op_map, o_op_map} = op_maps,
-         {o_id_map, n_id_map} = _id_maps
+         {n_id_map, o_id_map} = _id_maps
        ) do
     with n_positive <- positive_qualifier(node, o_op_map, n_id_map),
          n_negative <- negative_qualifier(node, o_op_map, n_id_map),
@@ -524,7 +543,7 @@ defmodule XdiffPlus do
   defp propagate_parents_match_upwards(
          [o_parent_id | o_parent_ids],
          [n_parent_id | n_parent_ids],
-         {o_id_map, n_id_map} = id_maps,
+         {n_id_map, o_id_map} = id_maps,
          op_maps
        ) do
     o_parent = Map.get(o_id_map, o_parent_id)
@@ -592,17 +611,25 @@ defmodule XdiffPlus do
     }
   end
 
-  defp set_defaults({n_op_map, o_op_map}, {new_tree, old_tree}) do
-    {:ok, o_op_map} = Algorithms.bft_traverse(old_tree, o_op_map, &set_default_op(&1, &2, :del))
-    {:ok, n_op_map} = Algorithms.bft_traverse(new_tree, n_op_map, &set_default_op(&1, &2, :ins))
+  defp set_defaults({n_op_map, o_op_map}) do
+    # {:ok, o_op_map} = Algorithms.bft_traverse(old_tree, o_op_map, &set_default_op(&1, &2, :del))
+    # {:ok, n_op_map} = Algorithms.bft_traverse(new_tree, n_op_map, &set_default_op(&1, &2, :ins))
+
+    # Instead of traversing the entire tree, just iterate over the operations map
+    # and updated entries that have no operation
+
+    o_op_map = Enum.reduce(o_op_map, o_op_map, &set_default_op(&1, &2, :del))
+    n_op_map = Enum.reduce(n_op_map, n_op_map, &set_default_op(&1, &2, :ins))
+
     {n_op_map, o_op_map}
   end
 
-  defp set_default_op(%{n_id: id}, op_map, default_op) do
-    case Map.get(op_map, id) do
-      nil -> Map.put(op_map, id, default_op)
-      _ -> op_map
-    end
+  defp set_default_op({n_id, nil}, acc, default_op) do
+    Map.put(acc, n_id, default_op)
+  end
+
+  defp set_default_op(_, acc, _) do
+    acc
   end
 
   defp consistency(n_positive, n_negative) do

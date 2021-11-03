@@ -50,6 +50,10 @@ defmodule Xtree do
     root
   end
 
+  def build_empty() do
+    %__MODULE__{n_id: -1}
+  end
+
   defp build_node(node, index \\ 0, n_id \\ 0, parent_ids \\ []) do
     label = Protocol.name(node)
     value = Protocol.value(node)
