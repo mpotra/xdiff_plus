@@ -2,6 +2,7 @@ defmodule Xtree.Algorithms do
   alias Xtree
 
   @type xtree() :: Xtree.t()
+  @type tree() :: xtree() | %{children: list(tree)}
   @type fn_traverse() ::
           (node :: xtree(), accumulator :: any() ->
              {:ok, accumulator :: any()} | {:halt, accumulator :: any()})
@@ -54,7 +55,7 @@ defmodule Xtree.Algorithms do
   @doc """
   Depth-First pre-order Traverse
   """
-  @spec dft_traverse(list(xtree()) | xtree(), accumulator :: any(), fn_visit :: fn_traverse()) ::
+  @spec dft_traverse(list(tree()) | tree(), accumulator :: any(), fn_visit :: fn_traverse()) ::
           {:ok, accumulator :: any()} | {:halt, accumulator :: any()}
   def dft_traverse([], acc, _fn_visit) do
     {:ok, acc}
@@ -88,7 +89,7 @@ defmodule Xtree.Algorithms do
   @doc """
   Breadth-First pre-order Traverse
   """
-  @spec bft_traverse(list(xtree()) | xtree(), accumulator :: any(), fn_visit :: fn_traverse()) ::
+  @spec bft_traverse(list(tree()) | tree(), accumulator :: any(), fn_visit :: fn_traverse()) ::
           {:ok, accumulator :: any()} | {:halt, accumulator :: any()}
   def bft_traverse([], [], acc, _fn_visit) do
     {:ok, acc}
@@ -127,7 +128,7 @@ defmodule Xtree.Algorithms do
     acc
   end
 
-  @spec walk(node :: xtree() | list(xtree()), map_func :: (xtree() -> any())) :: any()
+  @spec walk(node :: tree() | list(tree()), map_func :: (tree() -> any())) :: any()
   def walk([], _fn_walk) do
     []
   end
@@ -137,7 +138,7 @@ defmodule Xtree.Algorithms do
     [ret | walk(nodes, fn_walk)]
   end
 
-  def walk(%Xtree{} = node, fn_walk) do
+  def walk(%{children: _} = node, fn_walk) do
     case fn_walk.(node) do
       %{children: children} = ret ->
         children = walk(children, fn_walk)

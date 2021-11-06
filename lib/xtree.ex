@@ -45,6 +45,10 @@ defmodule Xtree do
           ref: any()
         }
 
+  def build(nil) do
+    build_empty()
+  end
+
   def build(node) do
     {root, _last_n_id} = build_node(node)
     root
@@ -54,7 +58,13 @@ defmodule Xtree do
     %__MODULE__{n_id: -1}
   end
 
-  defp build_node(node, index \\ 0, n_id \\ 0, parent_ids \\ []) do
+  defp build_node(node, index \\ 0, n_id \\ 0, parent_ids \\ [])
+
+  defp build_node(%__MODULE__{} = node, _, _, _) do
+    node
+  end
+
+  defp build_node(node, index, n_id, parent_ids) do
     label = Protocol.name(node)
     value = Protocol.value(node)
 

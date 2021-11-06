@@ -91,6 +91,20 @@ defmodule XdiffPlus do
     acc
   end
 
+  def diff(nil, nil) do
+    [{%{}, %{}}, {nil, nil}]
+  end
+
+  def diff(%Xtree{} = new_tree, nil) do
+    [{op_map, _}, {tree, _}] = diff(new_tree, Xtree.build(nil))
+    [{op_map, %{}}, {tree, nil}]
+  end
+
+  def diff(nil, %Xtree{} = old_tree) do
+    [{_, op_map}, {_, tree}] = diff(Xtree.build(nil), old_tree)
+    [{%{}, op_map}, {nil, tree}]
+  end
+
   def diff(%Xtree{} = new_tree, %Xtree{} = old_tree) do
     # build the tree message digest map for the old XTree
     {_o_tMD_map, o_id_map, o_op_map, o_htable} = build_old_tree_maps(old_tree)
@@ -315,20 +329,6 @@ defmodule XdiffPlus do
       |> unfold_op_maps(id_maps)
 
     [u_op_maps, {new_tree, old_tree}]
-  end
-
-  def diff(nil, %Xtree{} = old_tree) do
-    [{_, op_map}, {_, tree}] = diff(Xtree.build_empty(), old_tree)
-    [{%{}, op_map}, {nil, tree}]
-  end
-
-  def diff(%Xtree{} = new_tree, nil) do
-    [{op_map, _}, {tree, _}] = diff(new_tree, Xtree.build_empty())
-    [{op_map, %{}}, {tree, nil}]
-  end
-
-  def diff(nil, nil) do
-    [{%{}, %{}}, {nil, nil}]
   end
 
   def diff(new_tree, old_tree) do
@@ -651,7 +651,7 @@ defmodule XdiffPlus do
     {n_op_map, o_op_map}
   end
 
-  defp set_default_op({n_id, nil}, acc, default_op) do
+  defp set_default_op({n_id, nil}, acc, default_op) when n_id != -1 do
     Map.put(acc, n_id, default_op)
   end
 
