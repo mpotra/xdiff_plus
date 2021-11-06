@@ -1,6 +1,8 @@
 defmodule XdiffPlus.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/mpotra/xdiff_plus"
+
   def project do
     [
       app: :xdiff_plus,
@@ -8,6 +10,9 @@ defmodule XdiffPlus.MixProject do
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
+      source_url: @source_url,
+      description: "Elixir implementation of X-Diff Plus",
+      package: package(),
       deps: deps()
     ]
   end
@@ -25,15 +30,21 @@ defmodule XdiffPlus.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
-
       # Test utils
       {:saxy, "~> 1.4.0", only: [:test]},
 
       # Development dialyzer
       {:dialyxir, "~> 1.1.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.5", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["Mihai Potra"],
+      licenses: ["Apache-2.0"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(lib LICENSE.md mix.exs README.md)
     ]
   end
 end
