@@ -251,10 +251,20 @@ defmodule XdiffPlus do
             |> Enum.take(len)
             |> Enum.zip(n_nodes)
             |> Enum.reduce(op_maps, fn {o_node, n_node}, op_maps ->
-              op_maps
-              |> match_update_ptr(o_node, n_node)
-              |> match_subtree([o_node], [n_node], :nop)
-              |> match_upwards([{o_node, n_node}], id_maps)
+              # Matching two nodes with the same tMD, but with different parents
+              # might mean it's a MOV operation.
+
+              if o_node.parent_ids == n_node.parent_ids do
+                op_maps
+                |> match_update_ptr(o_node, n_node)
+                |> match_subtree([o_node], [n_node], :nop)
+                |> match_upwards([{o_node, n_node}], id_maps)
+              else
+                op_maps
+                |> match_update_ptr(o_node, n_node)
+                |> match_subtree([o_node], [n_node], :mov)
+                |> match_upwards([{o_node, n_node}], id_maps)
+              end
             end)
         end
       end)
@@ -297,11 +307,11 @@ defmodule XdiffPlus do
                       old_children,
                       op_maps,
                       fn
-                        %{index: ^n_index} = o_node, op_maps ->
+                        %{index: ^n_index, label: ^n_label} = o_node, op_maps ->
                           match_nodes(op_maps, o_node, n_node, :upd)
 
-                        %{label: ^n_label} = o_node, op_maps ->
-                          match_nodes(op_maps, o_node, n_node, :mov)
+                        # %{label: ^n_label} = o_node, op_maps ->
+                        #   match_nodes(op_maps, o_node, n_node, :mov)
 
                         _, op_maps ->
                           op_maps
@@ -582,7 +592,8 @@ defmodule XdiffPlus do
           # Parent nodes have diverged in attribute values
           match_nodes(op_maps, o_parent, n_parent, :nop)
         else
-          match_nodes(op_maps, o_parent, n_parent, :upd)
+          op_maps
+          # match_nodes(op_maps, o_parent, n_parent, :upd)
         end
 
       propagate_parents_match_upwards(o_parent_ids, n_parent_ids, id_maps, op_maps)
@@ -745,25 +756,4 @@ defmodule XdiffPlus do
       _ -> nil
     end
   end
-
-  # def find_parents(%{children: children} = parent, search) do
-  #   parent
-  #   |> find_in_children(children, search)
-  #   |> Enum.reverse()
-  # end
-
-  # def find_in_children(_parent, [], _search) do
-  #   []
-  # end
-
-  # def find_in_children(parent, [%{n_id: n_id} | _], %{n_id: n_id}) do
-  #   [parent]
-  # end
-
-  # def find_in_children(parent, [%{children: subchildren} = child | children], search) do
-  #   case find_in_children(child, subchildren, search) do
-  #     [] -> find_in_children(parent, children, search)
-  #     path -> [parent | path]
-  #   end
-  # end
 end

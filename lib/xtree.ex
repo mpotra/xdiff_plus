@@ -76,6 +76,7 @@ defmodule Xtree do
         uid -> {Util.hash(label <> uid), true}
       end
 
+    # Node digest (label + value)
     nMD = Util.hash(label <> value)
 
     {children, last_n_id} =
